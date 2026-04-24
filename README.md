@@ -135,7 +135,7 @@ Please note:
 
 </details>
 
-### Configuration
+### Configuration (for generating predictions)
 
 1. **Main config** - Edit `config/config.yaml`:
    - Set `results_dir` path
@@ -232,28 +232,165 @@ snakemake -j1 --use-conda --configfile config/config.yaml
 
 ## Model training
 
-> **⚠️ Important:** Only train models for biosamples matching the corresponding CRISPR data (currently K562).
+scE2G predicts enhancer-gene links from genomic features.  It learns from CRISPR perturbation data how to use these features to understand the regulatory landscape.  This section explains how to train new versions of the scE2G model using CRISPR data in additional cell types or new features.
 
-### Configuration
+### How it works
 
-Edit `config/config_training.yaml`:
+For each row in the cell clusters configuration table:
+1. scE2G takes ATAC fragments files and RNA count matrices, generates candidate E2G links, and computes genome-wide features (number of intralink TSS or elements, normalized ATAC at promoter, ARC E2G score, etc.) for each candidate link, just as it would when you run the model.
+2. These genome-wide features are overlapped with the CRISPRi links for the relevant cell type.  The resulting coordinate universe is defined by the CRISPRi links file.  Where a CRISPR perturbation does not map to exactly one candidate E2G link, features are merged or filled in accordance with the feature_table specified in the model configuration table.
 
-- **`model_config`** columns:
+For each row in the model configuration table:
+
+3. Resulting CRISPRi links annotated with genome-wide features for each cell type are appended together and sorted into one combined CRISPR dataset.  scE2G Multiome is trained on this dataset, defining weights for each of the features<sup>*</sup> specified in the feature_table.
+
+<sup>\*</sup> *scE2G Multiome's default features are numTSSEnhGene, normalizedATAC_prom, numNearbyEnhancers, ubiqExpresed, numCandidateEnhGene, & ARC.E2G.Score.  scE2G scATAC uses ABC.Score instead of ARC.E2G.Score.*
+
+### Training Configuration
+
+The crispr_cell_types in config_training.yaml dictates the CRISPR data and therefore the CRISPR cell types.  The model_config specifies which ATAC(+RNA) datasets to use to produce the genomewide features and which CRISPRi datafile has the relevant cell types. The dataset config specifies which ATAC(+RNA) datasets match which crispr cell types.
+
+#### 1 Edit **`config/config_training.yaml`**:
+
+Example:
+```
+### INPUT
+model_config: config/model_config.tsv
+cell_clusters: config/cell_cluster_config.tsv
+
+### OUTPUT
+results_dir: results/out_folder_name
+
+### RESOURCES
+crispr_dataset: # crispr_datasets named in the model_config must match one of these keys
+  training_multi: path to CRISPRi links in multiple cell types (datafile)
+  training_K562: path to CRISPRi links in K562 alone (datafile)
+crispr_cell_types: # list cell clusters available in CRISPRi datasets; list items must match cell types in CRISPRi datafile
+  training_multi: ["K562", "WTC11"]
+  training_K562: ["K562"]
+```
+
+**You may use CRISPR datasets available in [CRISPR Comparison GitHub](https://github.com/EngreitzLab/CRISPR_comparison/blob/main/resources/crispr_data).** Be sure to filter your data to only include cell types described in your cell cluster configuration table.
+
+<details>
+<summary> More details on scE2G configurations: </summary>
+
+##### OPTIONS
+
+Only set to benchmark_performance True if all cell clusters are K562
+```
+benchmark_performance: False
+```
+
+If True, create ATAC bw and prediction bedpe files.
+```
+make_IGV_tracks: False
+```
+
+Only set fragments_preprocessed to True if you are sure that your fragment files (1) are sorted with sort -k1,1 -k2,2n and (2) only contain fragments on chromosomes in the chromosome sizes reference file (default if not specified: False)
+```
+fragments_preprocessed: False
+```
+
+Set RNA_matrix_filtered to True if the RNA matrix contains the exact set of cells as the ATAC fragment file, and False if it contains more cells (default if not specified: True)
+```
+RNA_matrix_filtered: True
+```
+
+If the cell count in a cell type exceeds the max_cell_count, randomly extract max_cell_count cells.
+```
+max_cell_count: 20000
+```
+
+Maximum memory that can be allocated for submitted jobs (Megabytes)
+```
+max_memory_allocation_mb: 250000
+```
+
+Number of threads for parallel computing of Kendall correlation; must be less than or equal to snakemake's global '-j' parameter
+```
+threads: 1
+```
+
+##### REFERENCE FILES
+Should be compatible with the RNA matrix(ces)
+```
+gene_annotations: "resources/genome_annotations/gencode.v43.chr_patch_hapl_scaff.annotation.gtf.gz"
+```
+Gene list with promoter bounds
+```
+gene_TSS500: "resources/genome_annotations/CollapsedGeneBounds.hg38.intGENCODEv43.TSS500bp.bed"
+```
+Gene list with gene body bounds
+```
+genes: "resources/genome_annotations/CollapsedGeneBounds.hg38.intGENCODEv43.bed"
+```
+
+</details>
+
+#### 2 Make the model configuration table
+**`model_config`** columns:
   - `model`: Model name
-  - `dataset`: Dataset identifier  
+  - `dataset`: Cell cluster dataset unique identifier(s) (use commas without spaces to separate multiple cell types)
   - `ABC_directory`: ABC results directory
-  - `feature_table`: Feature table path
+  - `crispr_dataset`: unique identifier indicating the CRISPRi perturbation dataset to use for training; corresponds to a key under crispr_dataset in the training configuration yaml
+  - `feature_table`: Path to a configuration table of model features
   - `polynomial`: Use polynomial features? (Note: models with polynomial features cannot be directly used in Apply model workflow)
+  - `override_params`: Are there model training parameters you would like to change from the default logistic regression settings specified in `config/config_training.yaml`?
 
-- **`cell_cluster_config`** rows:
-  - Each "dataset" in `model_config` must correspond to a "cluster" here
-  - If `ABC_directory` not specified, must contain required ABC biosample parameters
+override_params: *See [this example](https://pastebin.com/zt1868R3) `model_config` for how to specify override parameters. If there are no override_params, leave the column blank but still include the header.*
+
+Example of model configuration:
+| model | dataset | ABC_directory | crispr_dataset | feature_table | polynomial | override_params |
+|-------|---------|---------------|----------------|---------------|------------|-----------------|
+| scE2G_train_on_multi | K562_Xu_et_al,WTC11 | | training_multi | resources/feature_tables/multiome_arc_n6.tsv | FALSE | |
+| scE2G_train_on_K562 | K562_Xu_et_al | | training_K562 | resources/feature_tables/multiome_arc_n6.tsv | FALSE | |
+
+##### `feature_table` columns: *Feature tables must be specified for each model*
+  - feature (name in final table)
+  - input_col (name in ABC output)
+  - second_input (multiplied by input_col if provided)
+  - aggregate_function (how to combine feature values when a CRISPR element overlaps more than one ABC element)
+  - fill_value (how to replace NAs)
+  - nice_name (used when plotting)
+
+Example of feature configuration:
+| feature | input_col | second_input | aggregate_function | fill_value | nice_name |
+|---------|-----------|--------------|-------------------|------------|-----------|
+| numTSSEnhGene | numTSSEnhGene | NA | max | 0 | # TSSs between E and P |
+| normalizedATAC_prom | normalized_atac_prom | NA | mean | 0 | ATAC signal at P |
+| numNearbyEnhancers | numNearbyEnhancers | NA | max | 0 | # peaks within 5Kb of E |
+| ubiqExpressed | is_ubiquitous_uniform | NA | max | 0 | Ubiquitous expression |
+| numCandidateEnhGene | numCandidateEnhGene | NA | max | 0 | # peaks between E and P |
+| ARC.E2G.Score | ARC.E2G.Score | NA | mean | 0 | ARC-E2G score |
+
+#### 3 Make the cell cluster configuration table
+**`cell_cluster_config`** columns:
+If `ABC_directory` not specified, must contain required ABC biosample parameters
+  - `cluster`: Each "dataset" in `model_config` must match a unique cell `cluster` row identifier here
+  - `crispr_cell_type`: Name of the cell cluster in the CRISPRi links table
+  - `rna_matrix_file`: Path to RNA count matrix for this cell cluster
+  - `atac_frag_file`: Path to ATAC fragment file for this cell cluster
+  - `model_dir`: scE2G models to train, *ex: models/multiome_powerlaw_v3,models/scATAC_powerlaw_v3*
+  <details>
+  <summary> click to expand required ABC biosample parameters </summary>
+
+  - `HiC_file` *ex: https://s3.us-central-1.wasabisys.com/aiden-encode-hic-mirror/bifocals_iter2/tissues.hic*
+  - `HiC_type` *ex: hic*
+  - `HiC_resolution` *ex: 5000*
+  </details>
+
+Example:
+| cluster | crispr_cell_type | rna_matrix_file | atac_frag_file | HiC_file | HiC_type | HiC_resolution | model_dir |
+|---------|------------------|-----------------|----------------|----------|----------|----------------|-----------|
+| WTC11 | WTC11 | path/to/wtc11_rna_count_matrix.csv.gz | path/to/wtc11_atac_fragments.tsv.gz | path/to/hic | hic | 5000 | models/multiome_powerlaw_v3,models/scATAC_powerlaw_v3 |
+| K562_Xu_et_al | K562 | path/to/k562_rna_count_matrix.csv.gz | path/to/k562_atac_fragments.tsv.gz | path/to/hic | hic | 5000 | models/multiome_powerlaw_v3,models/scATAC_powerlaw_v3 |
 
 ### Assembling model directory to use in application workflow
 
 Each model directory must contain:
 1. `model.pkl`
-2. `feature_table.tsv` 
+2. `feature_table.tsv`
 3. `score_threshold_{score_threshold}`, where `score_threshold` is a value from 0–1 (e.g., `0.177`)
 4. `tpm_threshold_{tpm_threshold}`, where `tpm_threshold` is any non-negative value  (use 0 for ATAC-only models)
 5. `qnorm_reference.tsv.gz` (single column with header `E2G.Score` containing raw scores)
