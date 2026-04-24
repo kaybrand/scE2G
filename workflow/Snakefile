@@ -11,7 +11,6 @@ if "container" in config.keys():
 MAX_MEM_MB = config["max_memory_allocation_mb"]
 include: os.path.join("rules", "utils.smk")
 
-
 ## Update paths in the config to be compatible with github submodules
 # Need to manually make results_dir an absolute path since above may
 # not work if results_dir folder isn't created

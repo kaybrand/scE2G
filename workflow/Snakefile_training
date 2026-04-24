@@ -5,9 +5,8 @@ import pandas as pd
 import os
 import yaml
 
-
 configfile: "config/config_training.yaml"
-conda: "mamba"
+
 if "container" in config.keys():
 		containerized: config["container"]
 
