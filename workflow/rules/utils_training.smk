@@ -28,6 +28,8 @@ def get_e2g_training_config(config, encode_re2g_dir):
 		e2g_config["genes"] = config["genes"]
 	if "crispr_dataset" in config:
 		e2g_config["crispr_dataset"] = config["crispr_dataset"]
+	if "crispr_cell_types" in config:
+		e2g_config["crispr_cell_types"] = config["crispr_cell_types"]
 	if "chr_sizes" in config:
 		e2g_config["chr_sizes"] = config["chr_sizes"]
 	if "regions_blocklist" in config:

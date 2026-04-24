@@ -25,8 +25,9 @@ config["results_dir"] = os.path.join(os.getcwd(), config["results_dir"])
 
 
 ## Define global variables
-RESULTS_DIR = config["results_dir"] 
+RESULTS_DIR = config["results_dir"]
 CELL_CLUSTER_DF = pd.read_table(config["cell_clusters"]).set_index("cluster", drop=False)
+MODELS_RESULTS_DIR = os.path.join(config["results_dir"], "model_results")
 
 if "IGV_dir" in config:
 	IGV_DIR = config["IGV_dir"]
@@ -35,6 +36,10 @@ else:
 
 if "preprocessed_fragments" not in config:
 	config["preprocessed_fragments"] = False
+
+# The default pipeline settings assume the each cell cluster has a corresponding fragment file and RNA matrix that contain the exact same cells
+if "RNA_matrix_filtered" not in config:
+	config["RNA_matrix_filtered"] = True
 
 ## Convert cell cluster config to a biosample config for the ABC pipeline
 ## Treat each cell cluster as a distinct biosample
@@ -74,8 +79,8 @@ model_config = pd.read_table(config["model_config"], na_values="").fillna("None"
 
 ## Define final output files
 model_comparison_files = []
-model_comparison_files.append(os.path.join(RESULTS_DIR, "performance_across_models.tsv")) # comparison across models
-model_comparison_files.extend(expand(os.path.join(RESULTS_DIR, "performance_across_models_{metric}.pdf"), metric=["auprc", "precision"])) # plot of comparisons
+model_comparison_files.append(os.path.join(MODELS_RESULTS_DIR, "performance_across_models.tsv")) # comparison across models
+model_comparison_files.extend(expand(os.path.join(MODELS_RESULTS_DIR, "performance_across_models_{metric}.pdf"), metric=["auprc", "precision"])) # plot of comparisons
 
 # Files for feature analysis
 forward_feature_selection_auprc_files = list()
@@ -86,38 +91,29 @@ all_feature_set_files = list()
 if config["run_feature_analysis"]:
 	forward_feature_selection_auprc_files = expand(
 		os.path.join(
-			RESULTS_DIR,
-			"{dataset}",
+			MODELS_RESULTS_DIR,
 			"{model}",
 			"feature_analysis",
 			"forward_feature_selection_auprc.pdf"
 		),
-		zip,
-		dataset = model_config["dataset"],
 		model = model_config["model"]
 	)
 	backward_feature_selection_auprc_files = expand(
 		os.path.join(
-			RESULTS_DIR,
-			"{dataset}",
+			MODELS_RESULTS_DIR,
 			"{model}",
 			"feature_analysis",
 			"backward_feature_selection_auprc.pdf"
 		),
-		zip,
-		dataset = model_config["dataset"],
 		model = model_config["model"]
 	)
 	permutation_feature_importance_auprc_files = expand(
 		os.path.join(
-			RESULTS_DIR,
-			"{dataset}",
+			MODELS_RESULTS_DIR,
 			"{model}",
 			"feature_analysis",
 			"permutation_feature_importance_auprc.pdf"
 		),
-		zip,
-		dataset = model_config["dataset"],
 		model = model_config["model"]
 	)
 
@@ -129,10 +125,9 @@ if config["run_feature_analysis"]:
 			if n_features < 14:
 				all_feature_set_files.append(
 					os.path.join(
-						RESULTS_DIR, 
-						row.dataset, 
-						row.model, 
-						"feature_analysis", 
+						MODELS_RESULTS_DIR,
+						row.model,
+						"feature_analysis",
 						"all_feature_sets.tsv"
 					)
 				)
@@ -142,14 +137,11 @@ rule all:
 	input: 
 		models = expand(
 			os.path.join(
-				RESULTS_DIR,
-				"{dataset}",
-				"{model}", 
-				"model", 
+				MODELS_RESULTS_DIR,
+				"{model}",
+				"model",
 				"model_full.pkl"
 			),
-			zip,
-			dataset = model_config["dataset"],
 			model = model_config["model"]
 		),
 		model_comparison = model_comparison_files,
