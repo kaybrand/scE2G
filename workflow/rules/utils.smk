@@ -45,7 +45,19 @@ def make_biosample_config(cluster_config, biosample_config, results_dir):
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
 
-	df.to_csv(biosample_config, sep='\t', index=False)
+	# Write via atomic rename so concurrent Slurm worker-job re-inits never
+	# read a truncated (empty) file while another process is mid-write.
+	tmp_path = biosample_config + f'.tmp.{os.getpid()}'
+	try:
+		df.to_csv(tmp_path, sep='\t', index=False)
+		os.replace(tmp_path, biosample_config)
+	except Exception:
+		# Clean up temp file if it still exists (failure case)
+		try:
+			os.unlink(tmp_path)
+		except FileNotFoundError:
+			pass  # Already deleted or inaccessible
+		raise
 
 
 ## Import configuration for ENCODE_rE2G
