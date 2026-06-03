@@ -31,10 +31,13 @@ def make_e2g_predictions_cv(df_enhancers, feature_list, cv_models, epsilon):
 	chr_list = np.unique(df_enhancers["chr"])
 
 	for chr in chr_list:
+		model_path = os.path.join(cv_models, f"model_test_{chr}.pkl")
+		if not os.path.exists(model_path):
+			continue
 		idx_test = df_enhancers[df_enhancers["chr"] == chr].index.values
 		if len(idx_test) > 0:
 			X_test = X.loc[idx_test, :]
-			with open(os.path.join(cv_models, f"model_test_{chr}.pkl"), "rb") as f:
+			with open(model_path, "rb") as f:
 				model = pickle.load(f)
 			probs = model.predict_proba(X_test)
 			df_enhancers.loc[idx_test, score_col] = probs[:, 1]
@@ -89,6 +92,7 @@ def get_qnorm_quantiles(input_df, n_scores):
 @click.option("--feature_table_file", required=True)
 @click.option("--trained_model", required=True)
 @click.option("--model_dir", required=True)
+@click.option("--cv_models_dir", default=None, help="Directory containing model_test_chr*.pkl files. Defaults to dirname(trained_model).")
 @click.option("--epsilon", type=float, default=0.01)
 @click.option("--tpm_threshold", type=float, default=0)
 @click.option("--n_scores", type=float, default=0)
@@ -101,6 +105,7 @@ def main(
 	feature_table_file,
 	trained_model,
 	model_dir,
+	cv_models_dir,
 	epsilon,
 	tpm_threshold,
 	n_scores,
@@ -121,7 +126,12 @@ def main(
 	)  # add "E2G.Score"
 
 	# make cv predictions
-	cv_models = os.path.join(model_dir, "cv_models")
+	if cv_models_dir is not None:
+		cv_models = cv_models_dir
+	elif os.path.isdir(os.path.join(model_dir, "cv_models")):
+		cv_models = os.path.join(model_dir, "cv_models")
+	else:
+		cv_models = os.path.dirname(trained_model)
 	df_enhancers = make_e2g_predictions_cv(
 			df_enhancers, feature_list, cv_models, epsilon
 		)  # add "E2G.Score.cv"

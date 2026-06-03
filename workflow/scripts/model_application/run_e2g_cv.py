@@ -33,9 +33,13 @@ def make_e2g_predictions_cv(df_enhancers, feature_list, cv_models, epsilon):
     for chr in chr_list:
         idx_test = df_enhancers[df_enhancers["chr"] == chr].index.values
         if len(idx_test) > 0:
+            pkl_path = os.path.join(cv_models, f"model_test_{chr}.pkl")
+            if not os.path.exists(pkl_path):
+                print(f"No cv model for {chr}, skipping (score will be NaN)")
+                continue
             X_test = X.loc[idx_test, :]
             print(f"Length of X_test: {(X_test.shape)}")
-            with open(os.path.join(cv_models, f"model_test_{chr}.pkl"), "rb") as f:
+            with open(pkl_path, "rb") as f:
                 model = pickle.load(f)
             probs = model.predict_proba(X_test)
             df_enhancers.loc[idx_test, score_col] = probs[:, 1]
