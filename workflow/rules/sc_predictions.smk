@@ -1,15 +1,38 @@
 
+def get_crispr_dataset_for_cluster(wildcards):
+    """Return the single CRISPR dataset file for a given cluster.
+
+    When crispr_dataset is a plain string, return it directly.
+    When it is a dict (multi-cell config), look up the cluster's
+    crispr_cell_type and match it against crispr_cell_types to pick
+    the right dataset key.
+    """
+    crispr_dataset = config['crispr_dataset']
+    if isinstance(crispr_dataset, str):
+        return crispr_dataset
+    cell_type = CELL_CLUSTER_DF.loc[wildcards.cluster, 'crispr_cell_type']
+    crispr_cell_types = config.get('crispr_cell_types', {})
+    for key, cell_types in crispr_cell_types.items():
+        if cell_type in cell_types:
+            return crispr_dataset[key]
+    raise ValueError(
+        f"No crispr_dataset entry found for cluster '{wildcards.cluster}' "
+        f"(crispr_cell_type='{cell_type}'). "
+        f"Add '{cell_type}' to a crispr_cell_types list in the config."
+    )
+
+
 # merge features with crispr data
 rule overlap_features_crispr_apply:
 	input:
 		prediction_file = os.path.join(RESULTS_DIR, "{cluster}", "{model_name}", "scE2G_predictions.tsv.gz"),
-		crispr = config['crispr_dataset'],
+		crispr = get_crispr_dataset_for_cluster,
 		feature_table_file = os.path.join(RESULTS_DIR, "{cluster}", "feature_table.tsv"),
 		tss = config['gene_TSS500']
 	params:
 		fill_value_script = os.path.join(SCRIPTS_DIR, "model_application", "get_fill_values.R")
 	output: 
-		features = os.path.join(RESULTS_DIR, "{cluster}", "{model_name}", "EPCrisprBenchmark_ensemble_data_GRCh38.K562_features_{nafill}.tsv.gz"),
+		features = os.path.join(RESULTS_DIR, "{cluster}", "{model_name}", "EPCrisprBenchmark_ensemble_data_GRCh38.{cluster}_features_{nafill}.tsv.gz"),
 	conda:
 		"../envs/sc_e2g.yml" 
 	resources:
@@ -20,7 +43,7 @@ rule overlap_features_crispr_apply:
 # calculate performance metrics 
 rule crispr_benchmarking:
 	input:
-		crispr_features = expand(os.path.join(RESULTS_DIR, "{cluster}", "{model_name}", "EPCrisprBenchmark_ensemble_data_GRCh38.K562_features_NAfilled.tsv.gz"), zip, cluster=BIOSAMPLE_DF["cluster"], model_name=BIOSAMPLE_DF["model_dir_base"]),
+		crispr_features = expand(os.path.join(RESULTS_DIR, "{cluster}", "{model_name}", "EPCrisprBenchmark_ensemble_data_GRCh38.{cluster}_features_NAfilled.tsv.gz"), zip, cluster=BIOSAMPLE_DF["cluster"], model_name=BIOSAMPLE_DF["model_dir_base"]),
 	output:
 		comp_table = os.path.join(RESULTS_DIR, "crispr_benchmarking_performance_summary.tsv")
 	params:
@@ -49,7 +72,7 @@ rule run_e2g_qnorm:
 		trained_model = lambda wildcards: encode_e2g.get_trained_model(wildcards.cluster, wildcards.model_name),
 		model_dir = lambda wildcards: encode_e2g._get_model_dir_from_wildcards(wildcards.cluster, wildcards.model_name, BIOSAMPLE_DF),
 		tpm_threshold =  lambda wildcards: encode_e2g.get_tpm_threshold(wildcards.cluster, wildcards.model_name, BIOSAMPLE_DF),
-		crispr_benchmarking = config["benchmark_performance"],
+		crispr_benchmarking = config["generate_cv_scores"],
 		scripts_dir = SCRIPTS_DIR
 	conda:
 		"../envs/sc_e2g.yml"

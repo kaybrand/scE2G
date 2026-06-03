@@ -60,6 +60,11 @@ module encode_e2g:
 ## Update scE2G config with consistent references
 config = update_scE2G_config(config, encode_e2g_config, config["encode_re2g_dir"])
 
+if "benchmark_performance" not in config:
+	config["benchmark_performance"] = False
+if "generate_cv_scores" not in config:
+	config["generate_cv_scores"] = config["benchmark_performance"]
+
 ## Include Snakemake rules from ENCODE_rE2G
 use rule * from encode_e2g exclude generate_e2g_predictions, format_external_features_config, get_stats, generate_plots, all, write_accessibility_bw_file
 
@@ -113,8 +118,8 @@ if config["make_IGV_tracks"]:
 	#output_files.extend(atac_bw) # just output normalize!
 	output_files.extend(atac_bw_norm)
 
-if config["benchmark_performance"]:
- 	output_files.append(model_perf)
+if config["benchmark_performance"] and isinstance(config.get("crispr_dataset", {}), str):
+	output_files.append(model_perf)
 
 rule all:
 	input: 
