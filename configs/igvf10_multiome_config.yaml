@@ -1,0 +1,84 @@
+# IGVF10 -- MULTIOME-ONLY scE2G config (multiome_powerlaw_v3), for the PERT /
+# critical-path measurement run.
+#
+# WHY THIS FILE EXISTS (do not merge it back into igvf10_config.yaml):
+#   The modality branch in scE2G is per-CLUSTER, not per-model. checkpoint
+#   features_required (workflow/rules/add_external_features.smk:1) reads the
+#   cluster's UNION feature table from make_biosample_feature_table. The shared
+#   igvf10_cell_clusters.tsv assigns BOTH models to every cluster, so the union
+#   always contains ARC.E2G.Score, every cluster resolves to to_generate=="ARC",
+#   and the Kendall -> ATAC-matrix -> ARC chain runs once per cluster and is
+#   shared by both models. get_gex_file / get_count_file (sc_predictions.smk:118,
+#   144) then hand the Kendall outputs to the scATAC jobs too.
+#
+#   Net effect: a both-models run cannot produce a MEASURED scATAC DAG. Splitting
+#   into one run per model is what makes the scATAC run resolve to
+#   to_generate=="Neither" and actually drop the Kendall/ARC chain.
+#
+#   This file is the multiome half. Its DAG is expected to be identical in shape
+#   to the both-models run minus the scATAC prediction jobs.
+#
+# HOW TO RUN:
+#   mamba activate run_snakemake9
+#   cd /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G_optimize
+#   snakemake --configfile configs/igvf10_multiome_config.yaml \
+#       --profile profiles/measure \
+#       --slurm-logdir /scratch/users/kaybrand/scE2G_optimize_results/igvf10_multiome/slurm_logs
+#
+#   * cd into THIS checkout first.
+#   * --conda-prefix is set in profiles/measure/config.yaml. Snakemake folds the
+#     env location into each env's hash, so omitting it rebuilds byte-identical
+#     envs from scratch. If a dry run reports env creation, do it ONCE and
+#     SERIALLY (--conda-create-envs-only) before any fan-out.
+#
+# DELIBERATELY ABSENT: chr_sizes, regions_blocklist, macs2_genomesize -- so that
+# scE2G's get_e2g_config()/update_scE2G_config() fill them from ENCODE_rE2G's
+# config, preserving parity with QC-and-Predictions.
+#
+# TWO CORRECTIONS to the header of the parent igvf10_config.yaml:
+#   1. scE2G_optimize/ENCODE_rE2G is NO LONGER an empty directory. Its submodules
+#      were initialized 2026-08-19 (ENCODE_rE2G 5930e74, ABC 9574a53). This config
+#      therefore points encode_re2g_dir at THIS checkout, not the main scE2G one.
+#      That is load-bearing for measurement: benchmark: directives added to this
+#      checkout's submodules are invisible to a run that loads ENCODE_rE2G from
+#      the main checkout.
+#   2. workflow/Snakefile:16 resolves WORKFLOW_DIR from
+#      workflow.current_basedir, NOT from os.getcwd() as that header claims. The
+#      cd is still advisable (unit_tests.smk uses relative tests/ paths) but it is
+#      no longer what makes script resolution correct.
+
+### INPUT
+cell_clusters: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G_optimize/configs/tables/igvf10_cell_clusters_multiome.tsv
+
+### OUTPUT
+# $SCRATCH: large, reproducible optimization run. Lustre, no backup, and files
+# unmodified for 90 days are purged -- the timer is reset only by real content
+# writes, not touch/rename.
+results_dir: /scratch/users/kaybrand/scE2G_optimize_results/igvf10_multiome
+IGV_dir: /scratch/users/kaybrand/scE2G_optimize_results/igvf10_multiome
+
+### OPTIONS
+benchmark_performance: False   # only k562_crispri is K562; scE2G requires ALL clusters be K562
+make_IGV_tracks: True          # <- scE2G_options
+fragments_preprocessed: False
+RNA_matrix_filtered: True
+max_cell_count: 20000          # <- scE2G_options
+max_memory_allocation_mb: 250000
+# Left at scE2G's default of 1 for strict parity. Raising it is the obvious knob
+# for a Kendall-parallelism experiment, but then it is no longer apples-to-apples.
+# NOTE: this value is passed straight through to compute_kendall.py --threads.
+threads: 1
+
+### REFERENCE FILES
+gene_annotations: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/genome_annotations/gencode.v43.chr_patch_hapl_scaff.annotation.gtf.gz
+gene_TSS500: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/genome_annotations/CollapsedGeneBound.hg38.GENCODEv43GeneSymbol.TSS500bp.bed
+genes: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/genome_annotations/CollapsedGeneBound.hg38.GENCODEv43GeneSymbol.bed
+crispr_dataset: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/EPCrisprBenchmark_ensemble_data_GRCh38.intGENCODEv43.tsv.gz
+qc_reference: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/reference_qc_metrics_sheth_qiu_2024.tsv
+
+### WORKFLOW PARAMS
+container: "library://mayasheth/e2g/sce2g_container:latest"
+encode_re2g_dir: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G_optimize/ENCODE_rE2G
+model_dir: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G_optimize/models/
+reference_features: ["numTSSEnhGene", "distance", "activity_base", "TargetGenePromoterActivityQuantile", "numNearbyEnhancers", "sumNearbyEnhancers", "is_ubiquitous_uniform", "P2PromoterClass", "numCandidateEnhGene", "hic_contact_pl_scaled_adj", "ABC.Score", "ABC.Numerator", "ABC.Denominator", "normalized_dhs_prom", "normalized_dhs_enh", "normalized_atac_prom", "normalized_atac_enh", "Kendall", "ARC.E2G.Score"]
+final_score_col: "E2G.Score.qnorm"

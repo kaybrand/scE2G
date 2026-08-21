@@ -1,0 +1,97 @@
+# IGVF10 -- standalone scE2G config, for running this scE2G_optimize checkout
+# directly (rule all, both multiome_powerlaw_v3 and scATAC_powerlaw_v3) on the
+# same 6 clusters, the same filtered inputs, and the same settings that the
+# QC-and-Predictions pipeline would hand scE2G.
+#
+# HOW TO RUN (both the cd and the --conda-prefix are load-bearing, see below):
+#
+#   mamba activate run_snakemake9
+#   cd /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G_optimize
+#   snakemake -s workflow/Snakefile \
+#       --configfile configs/igvf10_config.yaml \
+#       --conda-prefix /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/.snakemake/conda \
+#       --executor slurm --profile slurm.smk9 --use-conda -p
+#
+#   * cd into THIS checkout first. scE2G's own workflow/Snakefile computes
+#     SCRIPTS_DIR = os.path.join(os.getcwd(), "workflow", "scripts") -- a real
+#     process property, unaffected by -s. Invoked from anywhere else, its
+#     model-application scripts silently resolve into the wrong repo. (This is
+#     the same footgun QC_pseudobulks' workflow/run_pipeline.sh exists to hide.)
+#   * --conda-prefix is mandatory per the QC_pseudobulks project convention:
+#     Snakemake folds the env location into each env's hash, so omitting it
+#     rebuilds byte-identical envs from scratch. Point it at the directory that
+#     directly contains the hash-named env dirs, never at a repo root. If the
+#     dry run still reports env creation, do it ONCE and SERIALLY
+#     (--conda-create-envs-only) before any fan-out -- 11 concurrent
+#     invocations once raced destructively on the shared package cache.
+#
+# PROVENANCE -- this file is the literal form of the config dict that
+# QC_pseudobulks-igvf-portal-submission/workflow/rules/common.smk's
+# build_scE2G_config() computes in memory for igvf10, i.e.:
+#   scE2G/config/config.yaml
+#     + every value absolutized against scE2G_dir
+#     + cell_clusters / results_dir / IGV_dir
+#     + the scE2G_options overlay from workflow/config/igvf10_pipeline_config.yaml
+# Sections and key order below mirror scE2G/config/config.yaml so the two can be
+# read side by side.
+#
+# DELIBERATELY ABSENT: chr_sizes, regions_blocklist, macs2_genomesize.
+# QC-and-Predictions never sets them, which lets scE2G's own
+# get_e2g_config()/update_scE2G_config() (workflow/rules/utils.smk) fill them in
+# from ENCODE_rE2G's config. Setting any of them here would break that parity.
+#
+# WHICH CHECKOUT SUPPLIES WHAT:
+#   workflow code  -> this checkout (scE2G_optimize, branch optimize-sce2g).
+#                     The only intended difference from a QC-and-Predictions run.
+#   models/        -> this checkout. Verified byte-identical to scE2G's
+#                     (diff -r -q clean, both clean in git at 7cb2af7), so this
+#                     is bit-for-bit equivalent while keeping the running
+#                     checkout self-consistent.
+#   ENCODE_rE2G    -> the scE2G main checkout. scE2G_optimize/ENCODE_rE2G is an
+#                     empty directory: git worktree add does not populate
+#                     submodules, and this worktree's were never initialized.
+#   reference files-> the scE2G main checkout. Required, not just convenient:
+#                     scE2G_optimize/resources/genome_annotations/ does not
+#                     contain either CollapsedGeneBound.hg38.GENCODEv43GeneSymbol
+#                     file, which are exactly the two gene_TSS500/genes overrides
+#                     igvf10 uses.
+
+### INPUT
+cell_clusters: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G_optimize/configs/tables/igvf10_cell_clusters.tsv
+
+### OUTPUT
+# $SCRATCH: this is a large, reproducible optimization run. Lustre, no backup,
+# and files unmodified for 90 days are purged -- the timer is reset only by real
+# content writes, not touch/rename.
+results_dir: /scratch/users/kaybrand/scE2G_optimize_results/igvf10
+IGV_dir: /scratch/users/kaybrand/scE2G_optimize_results/igvf10
+
+### OPTIONS
+# scE2G's own defaults, except max_cell_count and make_IGV_tracks, which come
+# from igvf10_pipeline_config.yaml's scE2G_options block.
+benchmark_performance: False   # only k562_crispri is K562; scE2G requires ALL clusters be K562
+make_IGV_tracks: True          # <- scE2G_options
+fragments_preprocessed: False
+RNA_matrix_filtered: True
+max_cell_count: 20000          # <- scE2G_options
+max_memory_allocation_mb: 250000
+# Left at scE2G's default of 1 for strict parity with QC-and-Predictions, which
+# never overrides it. Raising it is the obvious knob for a Kendall-parallelism
+# experiment, but it is then no longer an apples-to-apples comparison.
+threads: 1
+
+### REFERENCE FILES
+gene_annotations: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/genome_annotations/gencode.v43.chr_patch_hapl_scaff.annotation.gtf.gz
+# gene_TSS500/genes <- scE2G_options. The standardized reference used by every
+# other scE2G run on IGVF pseudobulk data, NOT scE2G's own intGENCODEv43 default.
+gene_TSS500: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/genome_annotations/CollapsedGeneBound.hg38.GENCODEv43GeneSymbol.TSS500bp.bed
+genes: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/genome_annotations/CollapsedGeneBound.hg38.GENCODEv43GeneSymbol.bed
+crispr_dataset: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/EPCrisprBenchmark_ensemble_data_GRCh38.intGENCODEv43.tsv.gz
+qc_reference: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/resources/reference_qc_metrics_sheth_qiu_2024.tsv
+
+### WORKFLOW PARAMS
+container: "library://mayasheth/e2g/sce2g_container:latest"
+encode_re2g_dir: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/ENCODE_rE2G
+model_dir: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G_optimize/models/
+reference_features: ["numTSSEnhGene", "distance", "activity_base", "TargetGenePromoterActivityQuantile", "numNearbyEnhancers", "sumNearbyEnhancers", "is_ubiquitous_uniform", "P2PromoterClass", "numCandidateEnhGene", "hic_contact_pl_scaled_adj", "ABC.Score", "ABC.Numerator", "ABC.Denominator", "normalized_dhs_prom", "normalized_dhs_enh", "normalized_atac_prom", "normalized_atac_enh", "Kendall", "ARC.E2G.Score"]
+final_score_col: "E2G.Score.qnorm"
