@@ -16,6 +16,8 @@ rule save_reference_configs:
         e2g_out = os.path.join(RESULTS_DIR, "config", "ENCODE_rE2G_config.yml"),
         abc_out = os.path.join(RESULTS_DIR, "config", "ABC_config.yml"),
         res_out = os.path.join(RESULTS_DIR, "config", "expanded_biosample_config.tsv")
+    benchmark:
+        bench("save_reference_configs")
     run:
         import os, yaml, pandas as pd
 

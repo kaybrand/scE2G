@@ -10,6 +10,8 @@ rule overlap_features_crispr_apply:
 		fill_value_script = os.path.join(SCRIPTS_DIR, "model_application", "get_fill_values.R")
 	output: 
 		features = os.path.join(RESULTS_DIR, "{cluster}", "{model_name}", "EPCrisprBenchmark_ensemble_data_GRCh38.K562_features_{nafill}.tsv.gz"),
+	benchmark:
+		bench("overlap_features_crispr_apply", "cluster", "model_name", "nafill")
 	conda:
 		"../envs/sc_e2g.yml" 
 	resources:
@@ -27,6 +29,8 @@ rule crispr_benchmarking:
 		model_names = BIOSAMPLE_DF["model_dir_base"].tolist(),
 		model_thresh = BIOSAMPLE_DF["model_threshold"].tolist(),
 		scripts_dir = SCRIPTS_DIR
+	benchmark:
+		bench("crispr_benchmarking")
 	conda:
 		"../envs/sc_e2g.yml" 
 	resources:
@@ -51,6 +55,8 @@ rule run_e2g_qnorm:
 		tpm_threshold =  lambda wildcards: encode_e2g.get_tpm_threshold(wildcards.cluster, wildcards.model_name, BIOSAMPLE_DF),
 		crispr_benchmarking = config["benchmark_performance"],
 		scripts_dir = SCRIPTS_DIR
+	benchmark:
+		bench("run_e2g_qnorm", "cluster", "model_name")
 	conda:
 		"../envs/sc_e2g.yml"
 	resources:
@@ -78,6 +84,8 @@ rule filter_sc_e2g_predictions:
 		include_self_promoter = encode_e2g.config["include_self_promoter"],
 		score_col = config["final_score_col"],
 		scripts_dir = os.path.join(config["encode_re2g_dir"], encode_e2g.SCRIPTS_DIR)
+	benchmark:
+		bench("filter_sc_e2g_predictions", "cluster", "model_name", "threshold")
 	conda:
 		"../envs/sc_e2g.yml"
 	resources:
@@ -102,6 +110,8 @@ rule write_sc_e2g_predictions_bedpe:
 		scripts_dir = os.path.join(config["encode_re2g_dir"], encode_e2g.SCRIPTS_DIR)
 	output:
 		bedpe = os.path.join(IGV_DIR, "{cluster}", "{model_name}", "scE2G_predictions_threshold{threshold}.bedpe")
+	benchmark:
+		bench("write_sc_e2g_predictions_bedpe", "cluster", "model_name", "threshold")
 	conda:
 		"../envs/sc_e2g.yml"
 	resources:
@@ -131,6 +141,8 @@ rule element_and_gene_summaries:
 		gene_expr_file = get_gex_file
 	params:
 		tpm_threshold = lambda wildcards: encode_e2g.get_tpm_threshold(wildcards.cluster, wildcards.model_name, BIOSAMPLE_DF)
+	benchmark:
+		bench("element_and_gene_summaries", "cluster", "model_name")
 	conda:
 		"../envs/sc_e2g.yml"
 	resources:
@@ -158,6 +170,8 @@ rule get_stats_per_model_per_cluster:
 		umi_count = lambda wildcards: get_count_file(wildcards, "umi_count")
 	params:
 		score_column = "E2G.Score.qnorm"
+	benchmark:
+		bench("get_stats_per_model_per_cluster", "cluster", "model_name", "threshold")
 	conda:
 		"../envs/sc_e2g.yml"
 	resources:
@@ -173,6 +187,8 @@ rule plot_stats:
 		stats_files = [os.path.join(RESULTS_DIR, biosample, model_name, f"scE2G_predictions_threshold{threshold}_stats.tsv") for biosample,model_name,threshold in biosample_model_threshold]
 	params:
 		score_column = "E2G.Score.qnorm"
+	benchmark:
+		bench("plot_stats")
 	conda:
 		"../envs/sc_e2g.yml"
 	resources:
@@ -197,6 +213,8 @@ rule hover_plots:
 		results_dir = RESULTS_DIR,
 		code_dir = WORKFLOW_DIR,
 		tab_template = os.path.join(WORKFLOW_DIR, "workflow", "scripts", "prediction_qc", "qc_plot_tab_template.Rmd")
+	benchmark:
+		bench("hover_plots")
 	conda:
 		"../envs/sc_e2g.yml"
 	resources:

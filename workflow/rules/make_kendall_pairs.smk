@@ -21,6 +21,8 @@ rule make_kendall_pairs:
 			"Kendall", 
 			"Pairs.tsv.gz"
 		)
+	benchmark:
+		bench("make_kendall_pairs", "cluster")
 	resources:
 		mem_mb=32*1000
 	conda:

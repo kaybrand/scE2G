@@ -12,6 +12,8 @@ rule get_cell_barcodes:
 		mem_mb = encode_e2g.ABC.determine_mem_mb,
 	output:
 		cell_barcodes = os.path.join(RESULTS_DIR, "{cluster}", "Kendall", "cell_barcodes.txt")
+	benchmark:
+		bench("get_cell_barcodes", "cluster")
 	shell:
 		"""
 		zcat {input.frag_file} | cut -f 4 | awk '!seen[$0]++' > {output.cell_barcodes}
@@ -40,6 +42,8 @@ rule generate_atac_matrix:
 				"Kendall", 
 				"atac_matrix.rds"
 			)
+	benchmark:
+		bench("generate_atac_matrix", "cluster")
 	params:
 		max_cell_count = config['max_cell_count']
 	resources:

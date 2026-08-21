@@ -4,6 +4,8 @@
 rule test_python_unit:
 	output:
 		touch("tests/unit/.pytest.done")
+	benchmark:
+		bench("test_python_unit")
 	conda:
 		"../envs/sc_e2g.yml"
 	shell:
@@ -14,6 +16,8 @@ rule test_python_unit:
 rule test_r_unit:
 	output:
 		touch("tests/unit/.testthat.done")
+	benchmark:
+		bench("test_r_unit")
 	conda:
 		"../envs/sc_e2g.yml"
 	shell:

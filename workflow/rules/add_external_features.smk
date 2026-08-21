@@ -3,6 +3,8 @@ checkpoint features_required:
 		feature_table_file = os.path.join(RESULTS_DIR, "{sample}", "feature_table.tsv")
 	output:
 		to_generate = os.path.join(RESULTS_DIR, "{sample}", "to_generate.txt") # file with "Kendall" "ARC" or "Neither"
+	benchmark:
+		bench("features_required", "sample")
 	run:
 		Kendall = False
 		ARC = False
@@ -40,6 +42,8 @@ rule make_external_features_config:
 		e2g_path = config["encode_re2g_dir"]
 	output:
 		external_features_config = os.path.join(RESULTS_DIR, "{sample}", "external_features_config.tsv")
+	benchmark:
+		bench("make_external_features_config", "sample")
 	conda:
 		"../envs/sc_e2g.yml"
 	resources:

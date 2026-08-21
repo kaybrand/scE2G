@@ -33,7 +33,9 @@ rule compute_kendall:
 		umi_count = (os.path.join(RESULTS_DIR, "{cluster}", "umi_count.txt")),
 		cell_count = (os.path.join(RESULTS_DIR, "{cluster}", "cell_count.txt")),
 		all_gex = os.path.join(RESULTS_DIR, "{cluster}", "Kendall", "gene_expression_metrics.tsv.gz")
-	resources: 
+	benchmark:
+		bench("compute_kendall", "cluster")
+	resources:
 		mem_mb=partial(encode_e2g.ABC.determine_mem_mb, min_gb=63),
 		runtime=lambda wildcards, attempt: attempt*12*60
 	threads: 

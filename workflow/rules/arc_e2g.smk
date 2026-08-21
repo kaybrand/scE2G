@@ -23,7 +23,9 @@ rule arc_e2g:
 				"{cluster}", 
 				"ARC",
 				"EnhancerPredictionsAllPutative_ARC.tsv.gz")
-	resources: 
+	benchmark:
+		bench("arc_e2g", "cluster")
+	resources:
 		mem_mb=64*1000
 	conda:
 		"../envs/sc_e2g.yml"

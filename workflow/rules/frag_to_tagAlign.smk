@@ -24,6 +24,8 @@ rule frag_to_tagAlign:
 				"tagAlign",
 				"tagAlign.sort.gz.tbi"
 			)	
+	benchmark:
+		bench("frag_to_tagAlign", "cluster")
 	params:
 		chrSizes = config["chr_sizes"],
 		bedSplitSort = workflow.source_path("../scripts/bedSplitSort.sh")
@@ -67,6 +69,8 @@ if config["fragments_preprocessed"]:
 		resources: mem_mb=encode_e2g.ABC.determine_mem_mb
 		output:
 			fragment_count = (os.path.join(RESULTS_DIR, "{cluster}", "fragment_count.txt")),
+		benchmark:
+			bench("get_fragment_count", "cluster")
 		shell:
 			"""
 				zcat {input.frag_file} | wc -l > {output.fragment_count}
@@ -80,6 +84,8 @@ else:
 		output:
 			fragment_count = (os.path.join(RESULTS_DIR, "{cluster}", "fragment_count.txt")),
 			fragments_filtered = (os.path.join(RESULTS_DIR, "{cluster}", "fragments_filtered.tsv.gz"))
+		benchmark:
+			bench("process_fragment_file", "cluster")
 		threads: 8
 		resources:
 			mem_mb=encode_e2g.ABC.determine_mem_mb,
@@ -110,6 +116,8 @@ rule frag_to_bigWig:
 	output:
 		bigWig_file = os.path.join(IGV_DIR, "{cluster}", "ATAC.bw"),
 		bedGraph_file = temp(os.path.join(IGV_DIR, "{cluster}", "ATAC.bg"))
+	benchmark:
+		bench("frag_to_bigWig", "cluster")
 	resources:
 		mem_mb=encode_e2g.ABC.determine_mem_mb,
 		runtime_hr=24,
@@ -136,6 +144,8 @@ rule frag_to_norm_bigWig:
 	output:
 		bigWig_file = os.path.join(IGV_DIR, "{cluster}", "ATAC_norm.bw"),
 		bedGraph_file = temp(os.path.join(IGV_DIR, "{cluster}", "ATAC_norm.bg"))
+	benchmark:
+		bench("frag_to_norm_bigWig", "cluster")
 	resources:
 		mem_mb=encode_e2g.ABC.determine_mem_mb,
 		runtime_hr=24,
