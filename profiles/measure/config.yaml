@@ -35,16 +35,45 @@ jobs: 16
 retries: 0
 rerun-incomplete: True
 
-# Poll a job's status far more persistently before giving up on it.
-# Observed failure (2026-08-19, multiome run): make_biosample_feature_table for
-# jurkat ran 23 s, exited 0, wrote correct output, and Slurm recorded COMPLETED --
-# but the head process never registered the completion and then waited 17.7 h with
-# nothing queued, stuck at 144/159. There was NO error anywhere: the child log ends
-# "Finished ... 100% done" and the head log mentions the job exactly once, at
-# submission. Same family as the long-standing v7 pattern where a clean job is
-# mis-reported as NODE_FAIL/PREEMPTED, except here no status arrived at all.
-# Short-lived jobs are the risk: they can leave squeue before the poll lands.
+# Retained, but be clear that it does NOT address the hang described below.
+# Kept only for genuinely transient sacct query failures.
 slurm-status-attempts: 30
+
+# THE 17.7-HOUR HANG OF 2026-08-19 -- ROOT CAUSE, and why no setting here fixes it.
+#
+# make_biosample_feature_table for jurkat (SLURM 39910098) ran 23 s, exited 0,
+# wrote correct output, and Slurm recorded COMPLETED. The launcher never registered
+# it, kept running every other branch to 144/159, then sat idle 17.7 h with nothing
+# queued until cancelled by hand. No error, exception or warning anywhere.
+#
+# Cause: SLURM wrote a CORRUPTED STUB ACCOUNTING RECORD for that one job. Its
+# JobName was reset to SLURM's placeholder "allocation" instead of the run UUID,
+# with UID=0, QOS=Unknown, empty Partition/WorkDir -- the signature of a lost or
+# malformed JOB_START message to slurmdbd. The executor plugin identifies its jobs
+# SOLELY by `sacct --name <run_uuid>`, so the job became permanently invisible to
+# it. The plugin treats "absent from the status query" as "still running"
+# (`yield j`) with no bound, no counter, no timeout and no fallback to
+# `sacct -j <jobid>`, so it was re-yielded as active forever.
+#
+# Verified, and it falsifies the obvious short-job/squeue-race theory: six of our
+# make_biosample_feature_table jobs all COMPLETED with identical Elapsed=00:00:23;
+# the five carrying the UUID JobName were reported Finished, the one carrying
+# "allocation" was lost. Runtime was not the variable.
+#
+# Consequences for the settings in this file:
+#   - retries does NOT help. The job SUCCEEDED; report_job_error is never called.
+#   - slurm-status-attempts does NOT help. It would re-issue the same blind
+#     name-keyed query, and in plugin 2.3.1 the retry loop is near-dead code
+#     anyway (active_jobs_seen_by_sacct is reset each call, so it breaks after one
+#     successful query).
+#   - Upgrading the plugin does NOT help: the offending code is byte-identical in
+#     2.3.1 and 2.8.0. No upstream issue exists yet.
+#
+# Measured recurrence: 1 lost job in 191 submitted (~0.5%), i.e. roughly one hang
+# per 1.3 full runs. A launcher-side watchdog -- alert if no new "Finished jobid:"
+# line AND zero queued jobs for 30 min -- is currently the only thing that bounds
+# the loss. Full diagnosis and two proposed source fixes:
+#   ~/.claude-configs/optimize-sce2g/plans/slurm-lost-completion-diagnosis.md
 
 # Only re-run a job if its rule's CODE changed (or its outputs are missing).
 # WITHOUT this, a restart re-runs ~130 of 159 jobs instead of the 14 that are
