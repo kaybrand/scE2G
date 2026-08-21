@@ -1,0 +1,100 @@
+# Snakemake 9 profile for the scE2G PERT / critical-path MEASUREMENT runs.
+#
+# Deliberately separate from ~/.config/snakemake/slurm.smk9 so this measurement
+# config is versioned with the work and cannot perturb other pipelines.
+#
+# Differences from slurm.smk9, and why each one matters for measurement:
+#
+#   slurm_partition: owners is DROPPED. owners is preemptible; a preempted job is
+#     requeued and re-runs, which silently overwrites its own benchmark row and
+#     turns one measurement into a corrupted mixture of two partial attempts.
+#     engreitz (288 cores, 7d) and normal (7016 cores, 7d) are not preemptible.
+#
+#   slurm_extra "--nice" is DROPPED. Voluntarily de-prioritizing means jobs land
+#     on whatever is left over, which adds node-heterogeneity variance to timings.
+#
+#   runtime raised 6h -> 48h. frag_to_bigWig / frag_to_norm_bigWig declare
+#     `runtime_hr`, which the SLURM executor plugin does NOT read (it reads
+#     `runtime`, in minutes). Those jobs would otherwise inherit the default and
+#     be killed mid-measurement on the larger clusters.
+#
+#   retries: 0 is KEPT and is load-bearing here. determine_mem_mb scales with
+#     `attempt`, so a retried job both changes its own resource envelope and
+#     overwrites its benchmark file. One clean attempt or none.
+#
+#   jobs: 16 (up from 10) but deliberately not higher -- the fragment-processing
+#     and sort-heavy rules are Lustre-bound, and over-subscribing inflates exactly
+#     the rules we are trying to measure.
+#
+# slurm_account=engreitz is retained from slurm.smk9: it is what actually works on
+# this cluster for this group, notwithstanding the general Sherlock guidance that
+# accounts are unused.
+
+executor: slurm
+jobs: 16
+retries: 0
+rerun-incomplete: True
+
+# Poll a job's status far more persistently before giving up on it.
+# Observed failure (2026-08-19, multiome run): make_biosample_feature_table for
+# jurkat ran 23 s, exited 0, wrote correct output, and Slurm recorded COMPLETED --
+# but the head process never registered the completion and then waited 17.7 h with
+# nothing queued, stuck at 144/159. There was NO error anywhere: the child log ends
+# "Finished ... 100% done" and the head log mentions the job exactly once, at
+# submission. Same family as the long-standing v7 pattern where a clean job is
+# mis-reported as NODE_FAIL/PREEMPTED, except here no status arrived at all.
+# Short-lived jobs are the risk: they can leave squeue before the poll lands.
+slurm-status-attempts: 30
+
+# Only re-run a job if its rule's CODE changed (or its outputs are missing).
+# WITHOUT this, a restart re-runs ~130 of 159 jobs instead of the 14 that are
+# genuinely outstanding, discarding a day of compute and overwriting good
+# benchmarks. Cause: workflow/Snakefile:49 calls make_biosample_config() at PARSE
+# time, outside any rule, so tmp/config_abc_biosamples.tsv is rewritten on every
+# single invocation -- including --dry-run and --unlock. It is an input to
+# make_biosample_feature_table, so the whole DAG looks stale. Merely inspecting
+# the pipeline dirties it. Dropping `mtime` alone is not enough (params/input
+# fire too); `code` alone is what isolates the real work.
+# Jobs with missing outputs always run regardless of this setting.
+rerun-triggers: code
+
+# Deployment. conda (not the container): the container tag is the unpinned
+# `:latest` and is not cached locally, whereas conda matches what CI does.
+#
+# --conda-prefix is MANDATORY and points at the main scE2G checkout's existing
+# envs. This checkout started from the tip of scE2G/main, and all three env specs
+# (workflow/envs/sc_e2g.yml, ENCODE_rE2G/workflow/envs/encode_re2g.yml,
+# ENCODE_rE2G/ABC/workflow/envs/abcenv.yml) are byte-identical to that checkout's,
+# so every env is reused as-is. Verified: `--conda-create-envs-only -n` against
+# this prefix reports ZERO envs to create.
+#
+# Do NOT point this at a fresh directory. Snakemake folds the prefix path into
+# each env's hash, so a new prefix rebuilds byte-identical envs from scratch --
+# hours of conda solving for no change in what is being measured. It would also
+# mean the toy and full runs execute in different env instances.
+use-conda: True
+conda-prefix: /oak/stanford/groups/engreitz/Users/kaybrand/scE2G_preprint/scE2G/.snakemake/conda
+
+# Measurement-preservation flags (the non-negotiables for this session).
+notemp: True                      # keep intermediates for shape inspection
+slurm-keep-successful-logs: True  # v8+/v9 plugin flag; without it successful logs are deleted
+slurm-efficiency-report: True     # sacct-derived CPU/mem efficiency, cross-checks benchmark max_rss
+
+default-resources:
+    - slurm_account=engreitz
+    - slurm_partition=engreitz,normal
+    - runtime="48h"
+    - mem_mb=16000
+    - cpus_per_task=1
+
+# runtime MUST be a quoted unit string here ("48h"), not a bare integer.
+# A bare `runtime=2880` in default-resources came back as TimeLimit=00:48:00 --
+# 48 MINUTES, not 2 days -- and silently killed long jobs. Bare integers work
+# correctly when set INSIDE a rule (process_fragment_file's runtime=720*2 grants
+# 1-00:00:00 as intended); it is only the default-resources path that misreads
+# them. Always verify with `scontrol show job <child> | grep TimeLimit` after the
+# first jobs dispatch rather than trusting the value.
+#
+# This default matters more than it looks: frag_to_bigWig and frag_to_norm_bigWig
+# declare `runtime_hr`, which the SLURM executor plugin does not read at all, so
+# they fall through to whatever is set here.
