@@ -57,6 +57,53 @@ cd scE2G
 git submodule update --init --recursive
 ```
 
+<details>
+<summary><b>Cloning the <code>optimize-sce2g</code> branch (branch-specific — does not apply to <code>main</code>)</b></summary>
+
+This branch carries runtime instrumentation (`benchmark:` directives) in **both**
+submodules, on `measure-benchmarks` branches that live in personal forks. The
+submodule commits it pins therefore do **not** exist at the URLs in `.gitmodules`,
+which still point at `EngreitzLab/ENCODE_rE2G` and
+`broadinstitute/ABC-Enhancer-Gene-Prediction`.
+
+`.gitmodules` is left pointing upstream deliberately, so that the instrumentation
+commits stay clean to cherry-pick into upstream PRs. The cost is that the usual
+`--recurse-submodules` clone fails here with:
+
+```
+fatal: reference is not a tree: 9cfe3ab67987e71e3e42e12c10d16b26ef31e04c
+```
+
+**You only need this if you want to run the pipeline from this branch.** To browse
+the history or cherry-pick a commit, nothing below is required.
+
+```bash
+git clone git@github.com:kaybrand/scE2G.git
+cd scE2G
+git checkout optimize-sce2g
+
+# Redirect each submodule to the fork that actually has the pinned commits.
+# Use `git config`, NOT `git submodule set-url`: set-url rewrites the tracked
+# .gitmodules file, which is exactly what we are avoiding.
+git submodule init
+git config submodule.ENCODE_rE2G.url git@github.com:kaybrand/ENCODE_rE2G.git
+git submodule update
+
+cd ENCODE_rE2G
+git submodule init
+git config submodule.ABC.url git@github.com:kaybrand/ABC-Enhancer-Gene-Prediction.git
+git submodule update
+cd ..
+```
+
+Both overrides land in `.git/config` (untracked), so nothing you commit is affected.
+
+Note that GitHub's web UI renders the pinned submodule as a link to
+`EngreitzLab/ENCODE_rE2G@9cfe3ab`, which 404s. That is expected — the commit is
+present on the fork, not upstream.
+
+</details>
+
 ### Set up environment
 
 We highly recommend using the provided conda environment for compatibility:
